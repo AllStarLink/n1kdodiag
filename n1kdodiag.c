@@ -1,11 +1,8 @@
-/* Diagnostic program for DMK Engineering URI USB Radio Interface 
+/* Diagnostic program for NHRC (N1KDO) USB Radio Interface 
  *
- * Copyright (c) 2007-2009, Jim Dixon <jim@lambdatel.com>. All rights
+ * Copyright (c) 2007-2011, Jim Dixon <jim@lambdatel.com>. All rights
  * reserved.
  *
- * Analog test levels changed from 700/150 to 610/130 
- * (passband/stopband) by DMK 8/22/2009.
- * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -70,7 +67,7 @@
 #define MIXER_PARAM_SPKR_PLAYBACK_SW "Speaker Playback Switch"
 #define MIXER_PARAM_SPKR_PLAYBACK_VOL "Speaker Playback Volume"
 
-#define EEPROM_START_ADDR       6
+#define EEPROM_START_ADDR       0
 #define EEPROM_END_ADDR         63
 #define EEPROM_PHYSICAL_LEN     64
 #define EEPROM_TEST_ADDR        EEPROM_END_ADDR
@@ -84,8 +81,11 @@
 #define EEPROM_RXCTCSSADJ       13
 #define EEPROM_TXCTCSSADJ       15
 #define EEPROM_RXSQUELCHADJ     16
-#define EEPROM_N1KDO_ADDR       60
-#define EEPROM_N1KDO            0x6a00
+#define EEPROM_CTL_ADDR         0
+#define EEPROM_CTL              0x6700
+#define EEPROM_VID_ADDR         1
+#define EEPROM_PID_ADDR         2
+#define	PID_N1KDO		0x6a00
 
 #define PASSBAND_LEVEL		550.0
 #define STOPBAND_LEVEL		117.0
@@ -103,19 +103,21 @@ char *usbdevstrs[MAXUSBDEVICES];
 int usbport[MAXUSBDEVICES];
 int usbordered[MAXUSBDEVICES];
 int usbdevnums[MAXUSBDEVICES];
+int usbdevtypes[MAXUSBDEVICES];
 int nusbdevices = 0;
 char usbunique[100];
 
-enum {DEV_C108,DEV_C108AH};
+enum {DEV_C108,DEV_C108AH,DEV_N1KDO};
 
-char *devtypestrs[] = {"CM108","CM108AH"} ;
+char *devtypestrs[] = {"CM108","CM108AH","N1KDO-0","N1KDO-1","N1KDO-2","N1KDO-3",
+	"N1KDO-4","N1KDO-5","N1KDO-6","N1KDO-7","N1KDO-8","N1KDO-9","N1KDO-10",
+	"N1KDO-11","N1KDO-12","N1KDO-13","N1KDO-14","N1KDO-15"} ;
 
 void cdft(int, int, double *, int *, double *);
 
 float myfreq1[MAXUSBDEVICES],myfreq2[MAXUSBDEVICES],lev[MAXUSBDEVICES],lev1[MAXUSBDEVICES],lev2[MAXUSBDEVICES];
 
 unsigned int frags = ( ( (6 * 5) << 16 ) | 0xc );
-int devtype = 0;
 
 /* Call with:  devnum: alsa major device number, param: ascii Formal
 Parameter Name, val1, first or only value, val2 second value, or 0 
@@ -250,7 +252,7 @@ static void get_inputs(struct usb_dev_handle *handle,
 	      (char*)inputs, 4, 5000);
 }
 
-unsigned char getin(struct usb_dev_handle *usb_handle)
+unsigned char getin(struct usb_dev_handle *usb_handle, int devtype)
 {
 unsigned char buf[4];
 unsigned short c;
@@ -260,7 +262,7 @@ unsigned short c;
 	c = buf[1] & 0xf;
 	c += (buf[0] & 3) << 4;
 	/* in the AN part, the HOOK comes in on buf[0] bit 4, undocumentedly */
-	if (devtype == DEV_C108AH)
+	if (devtype != DEV_C108)
 	{
 		c &= 0xfd;
 		if (!(buf[0] & 0x10)) c += 2;
@@ -324,7 +326,7 @@ unsigned short cs;
 }
 
 
-static struct usb_device *device_init_one(char **strp,int *devnum)
+static struct usb_device *device_init_one(char **strp,int *devnum, int *devtype)
 {
 	struct usb_bus *usb_bus;
 	struct usb_device *dev;
@@ -343,7 +345,9 @@ static struct usb_device *device_init_one(char **strp,int *devnum)
 	            ((dev->descriptor.idProduct
 	              == C108_PRODUCT_ID) ||
 	            (dev->descriptor.idProduct
-	              == C108A_PRODUCT_ID)))
+	              == C108A_PRODUCT_ID) ||
+	            ((dev->descriptor.idProduct & 0xff00)
+	              == PID_N1KDO)))
 		{
 	                    sprintf(devstr,"%s/%s", usb_bus->dirname,dev->filename);
 			for(i = 0; i < 32; i++)
@@ -379,12 +383,16 @@ static struct usb_device *device_init_one(char **strp,int *devnum)
 			for(j = 0; j < nusbdevices; j++)
 				if (usbdevices[j] == dev) break;
 			if (j < nusbdevices) continue;
-			devtype = DEV_C108;
+			j = DEV_C108;
 			if (dev->descriptor.idProduct
-		              == C108A_PRODUCT_ID) devtype = DEV_C108AH;
+			    == C108A_PRODUCT_ID) j = DEV_C108AH;
+			if ((dev->descriptor.idProduct & 0xff00) ==
+				PID_N1KDO) j = DEV_N1KDO | 
+					(dev->descriptor.idProduct & 0xf);
 			if (devnum) *devnum = i;
+			if (devtype) *devtype = j;
 			printf("Found %s USB Radio Interface at %s\n",
-				devtypestrs[devtype],devstr);
+				devtypestrs[j],devstr);
 			if (strp) *strp = strdup(devstr);
 			return dev;
 		}
@@ -406,7 +414,8 @@ static struct usb_device *p;
 	usbunique[0] = 0;
 	while(nusbdevices < MAXUSBDEVICES)
 	{
-		p = device_init_one(&usbdevstrs[nusbdevices],&usbdevnums[nusbdevices]);
+		p = device_init_one(&usbdevstrs[nusbdevices],
+			&usbdevnums[nusbdevices],&usbdevtypes[nusbdevices]);
 		if (!p) break;
 		usbdevices[nusbdevices++] = p;
 	}
@@ -471,17 +480,17 @@ int	n = 0;
 	return(n);
 }
 
-static int testio(struct usb_dev_handle *usb_handle,unsigned char toout,
+static int testio(struct usb_dev_handle *usb_handle,int devtype,unsigned char toout,
 	unsigned char toexpect)
 {
 unsigned char c;
 
 	setout(usb_handle,toout);  /* should readback 0 */
-	c = getin(usb_handle) & 0xf2;
+	c = getin(usb_handle,devtype) & 0xf2;
 	return(dioerror(c,toexpect));
 }
 
-static float get_tonesample(struct tonevars *tvars,float ddr,float ddi)
+static float get_tonesample(struct tonevars *tvars,float ddr,float ddi,int devtype)
 {
 
 	float t;
@@ -493,11 +502,11 @@ static float get_tonesample(struct tonevars *tvars,float ddr,float ddi)
 	t=2.0-(tvars->mycr*tvars->mycr+tvars->myci*tvars->myci);
 	tvars->mycr*=t;
 	tvars->myci*=t;
-	if (devtype == DEV_C108AH) return tvars->mycr;
+	if (devtype != DEV_C108) return tvars->mycr;
 	return tvars->mycr * 0.9092;
 }
 
-static int outaudio(int fd,float freq1, float freq2)
+static int outaudio(int fd,int devtype,float freq1, float freq2)
 {
 unsigned short buf[AUDIO_SAMPLES_PER_BLOCK * 2];
 float	f,ddr1,ddi1,ddr2,ddi2;
@@ -525,12 +534,12 @@ static struct tonevars t1,t2;
 	{
 		if (freq1 > 0.0)
 		{
-			f = get_tonesample(&t1,ddr1,ddi1);
+			f = get_tonesample(&t1,ddr1,ddi1,devtype);
 			buf[i] = f * 32765;
 		} else buf[i] = 0;
 		if (freq2 > 0.0)
 		{
-			f = get_tonesample(&t2,ddr2,ddi2);
+			f = get_tonesample(&t2,ddr2,ddi2,devtype);
 			buf[i + 1] = f * 32765;
 		} else buf[i + 1] = 0;
 	}
@@ -643,7 +652,7 @@ int devnum = usbdevnums[index];
 		}
 		if (FD_ISSET(fd,&wfds))
 		{
-			outaudio(fd,myfreq1[index],myfreq2[index]);
+			outaudio(fd,usbdevtypes[index],myfreq1[index],myfreq2[index]);
 			continue;
 		}
 		if (FD_ISSET(fd,&rfds))
@@ -661,7 +670,7 @@ int devnum = usbdevnums[index];
 			}
 			memset(afft,0,sizeof(double) * 2 * (NFFT + 1));
 			gfac = 1.0;
-			if (devtype == DEV_C108AH) gfac = 0.7499;
+			if (usbdevtypes[index] != DEV_C108) gfac = 0.7499;
 			for(i = 0; i < res / 2; i++)
 			{
 				sbuf[i] = (int) (((float)sbuf[i] + 32768) * gfac) - 32768;
@@ -703,14 +712,14 @@ int devnum = usbdevnums[index];
 	pthread_exit(NULL);
 }
 
-static int digital_test(struct usb_dev_handle *usb_handle)
+static int digital_test(struct usb_dev_handle *usb_handle,int devtype)
 {
 int	nerror = 0;
 
 	printf("Testing digital I/O (PTT,COR,TONE and GPIO)....\n");
-	nerror += testio(usb_handle,8,0); /* NONE */
-	nerror += testio(usb_handle,0xc,0x30); /* GPIO3/PTT -> CAS/CTCSS */
-	nerror += testio(usb_handle,8,0); /* NONE */
+	nerror += testio(usb_handle,devtype,8,0); /* NONE */
+	nerror += testio(usb_handle,devtype,0xc,0x30); /* GPIO3/PTT -> CAS/CTCSS */
+	nerror += testio(usb_handle,devtype,8,0); /* NONE */
 	if (!nerror) printf("Digital I/O passed!!\n");
 	else printf("Digital I/O had %d errors!!\n",nerror);
 	return(nerror);
@@ -791,20 +800,28 @@ float	f;
 		printf("Failure!! EEPROM fail checksum or not present\n");
 		nerror++;
 	}
+        printf("Loc 0=%04x\n",sbuf[0]);
+        printf("Loc 1=%04x\n",sbuf[1]);
+        printf("Loc 2=%04x\n",sbuf[2]);
+        printf("Loc 3=%04x\n",sbuf[3]);
+        printf("Loc 4=%04x\n",sbuf[4]);
+        printf("Loc 5=%04x\n",sbuf[5]);
+        printf("Loc 6=%04x\n",sbuf[6]);
+        printf("Loc 7=%04x\n",sbuf[7]);
+        printf("Loc 8=%04x\n",sbuf[8]);
+        printf("Loc 9=%04x\n",sbuf[9]);
+        printf("Loc a=%04x\n",sbuf[10]);
+        printf("Loc b=%04x\n",sbuf[11]);
+        printf("Loc c=%04x\n",sbuf[12]);
+        printf("Loc d=%04x\n",sbuf[13]);
 	if (sbuf[EEPROM_MAGIC_ADDR] != EEPROM_MAGIC)
 	{
 		printf("Error!! EEPROM MAGIC BAD, got %04x hex, expected %04x hex\n",
 			sbuf[EEPROM_MAGIC_ADDR],EEPROM_MAGIC);
 		nerror++;
 	}
-	if (sbuf[EEPROM_N1KDO_ADDR] != (EEPROM_N1KDO + index))
-	{
-		printf("Error!! EEPROM N1KDO BAD, got %04x hex, expected %04x hex\n",
-			sbuf[EEPROM_N1KDO_ADDR],EEPROM_N1KDO + index);
-		nerror++;
-	}
 	if (nerror) return(nerror);
-        printf("N1KDO port number=%i\n",sbuf[EEPROM_N1KDO_ADDR] & 0xff);
+//        printf("N1KDO port number=%i\n",sbuf[EEPROM_N1KDO_ADDR] & 0xff);
         printf("rxmixerset=%i\n",sbuf[EEPROM_RXMIXERSET]);
         printf("txmixaset=%i\n",sbuf[EEPROM_TXMIXASET]);
         printf("txmixbset=%i\n",sbuf[EEPROM_TXMIXBSET]);
@@ -822,8 +839,9 @@ static void eeprom_init(struct usb_dev_handle *usb_handle,int index)
 unsigned short sbuf[64];
 
 	memset(sbuf,0xff,sizeof(sbuf));
-	sbuf[EEPROM_MAGIC_ADDR] = EEPROM_MAGIC;
-	sbuf[EEPROM_N1KDO_ADDR] = EEPROM_N1KDO | index;
+	sbuf[EEPROM_CTL_ADDR] = EEPROM_CTL;
+	sbuf[EEPROM_VID_ADDR] = C108_VENDOR_ID;
+	sbuf[EEPROM_PID_ADDR] = 0x6a00 | index;
 	put_eeprom(usb_handle,sbuf);
 }
 
@@ -839,7 +857,7 @@ struct termios t,t0;
 float myfreq;
 
 	printf("N1KDODiag, diagnostic program for the N1KDO\n");
-	printf("USB Radio Interface, version 0.1, 01/09/11\n\n");
+	printf("USB Radio Interface, version 0.2, 01/10/11\n\n");
 
 	device_init();
 	if (!nusbdevices) {
@@ -955,11 +973,11 @@ float myfreq;
 			myfreq = 0;
 			break;
 		    case 'i':
-			digital_test(usb_handle);
+			digital_test(usb_handle,usbdevtypes[curport]);
 			continue;
 		    case 't':
 		    case 'T':
-			errs = digital_test(usb_handle);
+			errs = digital_test(usb_handle,usbdevtypes[curport]);
 			errs += analog_test(curport,str[0] == 'T');
 			if (!errs) printf("System Tests all Passed successfully!!!!\n");
 			else printf("%d Error(s) found during test(s)!!!!\n",errs);
