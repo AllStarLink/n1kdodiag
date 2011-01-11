@@ -800,20 +800,13 @@ float	f;
 		printf("Failure!! EEPROM fail checksum or not present\n");
 		nerror++;
 	}
-        printf("Loc 0=%04x\n",sbuf[0]);
-        printf("Loc 1=%04x\n",sbuf[1]);
-        printf("Loc 2=%04x\n",sbuf[2]);
-        printf("Loc 3=%04x\n",sbuf[3]);
-        printf("Loc 4=%04x\n",sbuf[4]);
-        printf("Loc 5=%04x\n",sbuf[5]);
-        printf("Loc 6=%04x\n",sbuf[6]);
-        printf("Loc 7=%04x\n",sbuf[7]);
-        printf("Loc 8=%04x\n",sbuf[8]);
-        printf("Loc 9=%04x\n",sbuf[9]);
-        printf("Loc a=%04x\n",sbuf[10]);
-        printf("Loc b=%04x\n",sbuf[11]);
-        printf("Loc c=%04x\n",sbuf[12]);
-        printf("Loc d=%04x\n",sbuf[13]);
+	if ((sbuf[EEPROM_PID_ADDR] & 0xff00) != PID_N1KDO)
+	{
+		printf("Error!! EEPROM PID not N1KDO type, got %04x hex, expected %04x hex\n",
+			sbuf[EEPROM_PID_ADDR],PID_N1KDO);
+		nerror++;
+	}
+	else printf("Found N1KDO port number: %i\n",sbuf[EEPROM_PID_ADDR] & 0xff);
 	if (sbuf[EEPROM_MAGIC_ADDR] != EEPROM_MAGIC)
 	{
 		printf("Error!! EEPROM MAGIC BAD, got %04x hex, expected %04x hex\n",
@@ -821,7 +814,6 @@ float	f;
 		nerror++;
 	}
 	if (nerror) return(nerror);
-//        printf("N1KDO port number=%i\n",sbuf[EEPROM_N1KDO_ADDR] & 0xff);
         printf("rxmixerset=%i\n",sbuf[EEPROM_RXMIXERSET]);
         printf("txmixaset=%i\n",sbuf[EEPROM_TXMIXASET]);
         printf("txmixbset=%i\n",sbuf[EEPROM_TXMIXBSET]);
@@ -857,7 +849,7 @@ struct termios t,t0;
 float myfreq;
 
 	printf("N1KDODiag, diagnostic program for the N1KDO\n");
-	printf("USB Radio Interface, version 0.2, 01/10/11\n\n");
+	printf("USB Radio Interface, version 0.3, 01/10/11\n\n");
 
 	device_init();
 	if (!nusbdevices) {
