@@ -392,8 +392,8 @@ static struct usb_device *device_init_one(char **strp,int *devnum, int *devtype)
 			if (devnum) *devnum = i;
 			if (devtype) *devtype = j;
 			printf("Found %s USB Radio Interface at %s\n",
-				devtypestrs[j],devstr);
-			if (strp) *strp = strdup(devstr);
+				devtypestrs[j],cp);
+			if (strp) *strp = strdup(cp);
 			return dev;
 		}
 	    }
@@ -849,7 +849,7 @@ struct termios t,t0;
 float myfreq;
 
 	printf("N1KDODiag, diagnostic program for the N1KDO\n");
-	printf("USB Radio Interface, version 0.3, 01/10/11\n\n");
+	printf("USB Radio Interface, version 0.4, 01/10/11\n\n");
 
 	device_init();
 	if (!nusbdevices) {
@@ -897,8 +897,11 @@ float myfreq;
 		myfreq2[curport] = 0.0;
 		printf("\nCurrent USB device:  %d (Port %d)\n\n",usbordered[curport],usbport[curport]);
 		printf("Menu:\r\n\n");
-		printf("USB Device Selection:\n");
-		printf("0 thru %d - Select specified USB Device\n",nusbdevices - 1);
+		if (nusbdevices > 1)
+		{
+			printf("USB Device Selection:\n");
+			printf("0 thru %d - Select specified USB Device\n",nusbdevices - 1);
+		}
 		printf("For Left Channel:\n");
 		printf("11 - 1004Hz, 12 - 204Hz, 13 - 300Hz, 14 - 404Hz, 15 - 502Hz\n");
 		printf("16 - 1502Hz, 17 - 2004Hz, 18 - 3004Hz, 19 - 5004Hz\n");
